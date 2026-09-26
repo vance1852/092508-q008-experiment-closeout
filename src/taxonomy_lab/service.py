@@ -10,6 +10,7 @@ from typing import Any, Iterable, Mapping
 
 from .analysis import ALGORITHM_VERSION, analyze
 from .clock import SystemClock, isoformat
+from .closeout import CloseoutMixin
 from .contracts import EvidenceItem, EvidenceProtocol, ValidationError
 from .errors import Conflict, Forbidden, InvalidState, NotFound, ValidationFailed
 from .jsonio import canonical_json, content_digest
@@ -19,15 +20,20 @@ from .storage import initialize, transaction
 ROLE_PERMISSIONS = {
     "operator": {
         "catalog.write", "batch.create", "batch.start", "evidence_item.import",
-        "exclusion.request", "exclusion.revoke",
+        "exclusion.request", "exclusion.revoke", "material.register", "closeout.submit",
     },
     "statistician": {"evidence_protocol.publish", "batch.seal", "exclusion.review", "analysis.run"},
     "approver": {"decision.write"},
-    "auditor": {"report.read", "audit.read"},
+    "auditor": {"report.read", "audit.read", "closeout.read"},
+    "instructor": {
+        "closeout.submit", "closeout.confirm.instructor", "closeout.supersede",
+        "batch.protocol_correct", "closeout.read",
+    },
+    "curator": {"closeout.confirm.museum", "disposition.record", "closeout.read"},
 }
 
 
-class TaxonomyLabService:
+class TaxonomyLabService(CloseoutMixin):
     """在单个 SQLite 连接上提供全部业务操作。"""
 
     def __init__(self, connection: sqlite3.Connection, clock=None) -> None:

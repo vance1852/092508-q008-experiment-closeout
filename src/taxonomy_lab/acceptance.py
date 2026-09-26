@@ -28,6 +28,8 @@ def run(workspace: Path) -> dict[str, object]:
             service.create_user("operator-1", "测试操作员", "operator")
             service.create_user("stat-1", "统计负责人", "statistician")
             service.create_user("approver-1", "观察材料采信审批人", "approver")
+            service.create_user("instructor-1", "指导教师", "instructor")
+            service.create_user("curator-1", "馆方保藏负责人", "curator")
             service.create_user("auditor-1", "审计人员", "auditor")
             service.register_device("operator-1", "scope-a", "A 型标本事件实验采集设备", "示例设备供应商")
             service.register_build("operator-1", "build-a1", "scope-a", "1.0.0", "a" * 64)
@@ -46,11 +48,45 @@ def run(workspace: Path) -> dict[str, object]:
             service.decide(
                 "approver-1", "batch-demo", analysis["analysis_id"], decision_value, "离线验收决定"
             )
+            # 登记四类物料并给出与初始数量守恒的去向。
+            service.register_material_stock("operator-1", "batch-demo", "live_specimen", "LIVE-1", 3)
+            service.record_disposition(
+                "curator-1", "batch-demo", "live_specimen", "LIVE-1", "return", 3, "观察后活体放生归还"
+            )
+            service.register_material_stock("operator-1", "batch-demo", "temporary_slide", "SLIDE-1", 4)
+            service.record_disposition(
+                "curator-1", "batch-demo", "temporary_slide", "SLIDE-1", "destruction", 2, "临时玻片废弃"
+            )
+            service.record_disposition(
+                "curator-1", "batch-demo", "temporary_slide", "SLIDE-1", "accession", 2, "关键形态特征转正式玻片入藏"
+            )
+            reagent = service.register_material_stock("operator-1", "batch-demo", "reagent", "REAGENT-1", 2)
+            service.record_consumption("operator-1", "batch-demo", reagent["stock_id"], 1)
+            service.record_disposition(
+                "curator-1", "batch-demo", "reagent", "REAGENT-1", "destruction", 1, "剩余试剂无害化销毁"
+            )
+            service.register_material_stock("operator-1", "batch-demo", "collectible_sample", "SAMPLE-1", 5)
+            service.record_disposition(
+                "curator-1", "batch-demo", "collectible_sample", "SAMPLE-1", "accession", 5, "符合入藏标准转正式标本"
+            )
+            closeout = service.submit_closeout(
+                "instructor-1", "batch-demo", "demo-closeout-1",
+                ["operator-1", "instructor-1"], "学校联合实验结项",
+            )
+            service.confirm_closeout_instructor("instructor-1", closeout["closeout_id"])
+            service.confirm_closeout_museum("curator-1", closeout["closeout_id"])
+            # 馆方重复确认必须回放原结项单。
+            replayed = service.confirm_closeout_museum("curator-1", closeout["closeout_id"])
+            if replayed["content_sha256"] != closeout["content_sha256"]:
+                raise RuntimeError("重复确认未能回放原结项结果")
             report = service.report("auditor-1", "batch-demo")
+            closeout_report = service.closeout_report("auditor-1", "batch-demo")
+            if not closeout_report["conservation"]["conserved"]:
+                raise RuntimeError("结项物料数量不守恒")
             schema = inspect_schema(connection)
         finally:
             connection.close()
-    if schema["missing_tables"] or schema["schema_version"] != "2":
+    if schema["missing_tables"] or schema["schema_version"] != "3":
         raise RuntimeError("SQLite 基础结构检查失败")
     return {
         "status": "ok",
@@ -60,6 +96,9 @@ def run(workspace: Path) -> dict[str, object]:
         "input_sha256": analysis["input_sha256"],
         "conclusion": analysis["result"]["conclusion"],
         "decision": report["decision"]["decision"],
+        "closeout_id": closeout["closeout_id"],
+        "closeout_state": closeout_report["current_closeout_id"] and "confirmed",
+        "material_conservation": closeout_report["conservation"],
         "event_count": len(report["events"]),
         "schema": schema,
     }

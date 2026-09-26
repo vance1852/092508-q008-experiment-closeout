@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 PRAGMA foreign_keys = ON;
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS evidence_protocol_catalog (
 CREATE TABLE IF NOT EXISTS users (
     user_id TEXT PRIMARY KEY,
     display_name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('operator', 'statistician', 'approver', 'auditor')),
+    role TEXT NOT NULL CHECK (role IN ('operator', 'statistician', 'approver', 'auditor', 'instructor', 'curator')),
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
 );
 
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS batches (
     evidence_protocol_id TEXT NOT NULL,
     evidence_protocol_version INTEGER NOT NULL,
     build_id TEXT NOT NULL REFERENCES builds(build_id),
-    state TEXT NOT NULL CHECK (state IN ('draft', 'running', 'sealed', 'analyzing', 'analyzed', 'decided')),
+    state TEXT NOT NULL CHECK (state IN ('draft', 'running', 'sealed', 'analyzing', 'analyzed', 'decided', 'closed')),
     revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
     created_by TEXT NOT NULL REFERENCES users(user_id),
     created_at TEXT NOT NULL,
@@ -148,6 +148,76 @@ CREATE TABLE IF NOT EXISTS decisions (
     UNIQUE (batch_id, analysis_id)
 );
 
+CREATE TABLE IF NOT EXISTS material_stocks (
+    stock_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id TEXT NOT NULL REFERENCES batches(batch_id),
+    material_type TEXT NOT NULL CHECK (material_type IN ('live_specimen', 'temporary_slide', 'reagent', 'collectible_sample')),
+    material_ref TEXT NOT NULL,
+    initial_quantity INTEGER NOT NULL CHECK (initial_quantity >= 0),
+    consumed_quantity INTEGER NOT NULL DEFAULT 0 CHECK (consumed_quantity >= 0),
+    registered_by TEXT NOT NULL REFERENCES users(user_id),
+    registered_at TEXT NOT NULL,
+    UNIQUE (batch_id, material_type, material_ref)
+);
+
+CREATE TABLE IF NOT EXISTS material_dispositions (
+    disposition_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id TEXT NOT NULL REFERENCES batches(batch_id),
+    stock_id INTEGER NOT NULL REFERENCES material_stocks(stock_id),
+    material_type TEXT NOT NULL,
+    material_ref TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('accession', 'return', 'destruction')),
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    reason TEXT NOT NULL,
+    evidence_item_id INTEGER REFERENCES evidence_items(evidence_item_id),
+    recorded_by TEXT NOT NULL REFERENCES users(user_id),
+    recorded_at TEXT NOT NULL,
+    archived_in_closeout INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_material_dispositions_batch ON material_dispositions(batch_id);
+
+CREATE TABLE IF NOT EXISTS closeouts (
+    closeout_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id TEXT NOT NULL REFERENCES batches(batch_id),
+    serial INTEGER NOT NULL CHECK (serial > 0),
+    state TEXT NOT NULL CHECK (state IN (
+        'submitted', 'instructor_confirmed', 'confirmed',
+        'withdrawn', 'returned', 'partially_returned', 'superseded'
+    )),
+    evidence_protocol_id TEXT NOT NULL,
+    evidence_protocol_version INTEGER NOT NULL,
+    evidence_protocol_sha256 TEXT NOT NULL CHECK (length(evidence_protocol_sha256) = 64),
+    analysis_id INTEGER,
+    input_sha256 TEXT,
+    result_digest TEXT,
+    decision_id INTEGER,
+    decision TEXT,
+    batch_revision INTEGER NOT NULL,
+    participants_json TEXT NOT NULL,
+    exclusions_json TEXT NOT NULL,
+    material_snapshot_json TEXT NOT NULL,
+    conservation_json TEXT NOT NULL,
+    request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+    content_sha256 TEXT NOT NULL CHECK (length(content_sha256) = 64),
+    submitted_by TEXT NOT NULL REFERENCES users(user_id),
+    submitted_at TEXT NOT NULL,
+    instructor_confirmed_by TEXT REFERENCES users(user_id),
+    instructor_confirmed_at TEXT,
+    museum_confirmed_by TEXT REFERENCES users(user_id),
+    museum_confirmed_at TEXT,
+    returned_fields_json TEXT,
+    partially_returned_fields_json TEXT,
+    return_reason TEXT,
+    superseded_reason TEXT,
+    superseded_at TEXT,
+    superseded_by TEXT REFERENCES users(user_id),
+    superseded_by_closeout_id INTEGER,
+    UNIQUE (batch_id, serial)
+);
+
+CREATE INDEX IF NOT EXISTS idx_closeouts_batch ON closeouts(batch_id);
+
 CREATE TABLE IF NOT EXISTS audit_events (
     event_id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL,
@@ -162,7 +232,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
 REQUIRED_TABLES = frozenset({
     "schema_meta", "evidence_protocol_catalog", "users", "capture_devices", "builds", "batches",
     "evidence_items", "idempotency_keys", "exclusion_requests", "analysis_jobs",
-    "analyses", "decisions", "audit_events",
+    "analyses", "decisions", "material_stocks", "material_dispositions", "closeouts", "audit_events",
 })
 
 

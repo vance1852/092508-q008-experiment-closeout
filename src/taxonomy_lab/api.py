@@ -133,6 +133,75 @@ class JsonApplication:
                     payload["decision"], payload["reason"],
                 )
                 return Response(201, result)
+            if method == "POST" and len(parts) == 3 and parts[0] == "batches" and parts[2] == "materials":
+                result = self.service.register_material_stock(
+                    self._actor(normalized_headers), parts[1], payload["material_type"],
+                    payload["material_ref"], int(payload["initial_quantity"]),
+                )
+                return Response(201, result)
+            if (
+                method == "POST" and len(parts) == 5 and parts[0] == "batches"
+                and parts[2] == "materials" and parts[4] == "consume"
+            ):
+                result = self.service.record_consumption(
+                    self._actor(normalized_headers), parts[1], int(parts[3]), int(payload["quantity"])
+                )
+                return Response(200, result)
+            if method == "POST" and len(parts) == 3 and parts[0] == "batches" and parts[2] == "dispositions":
+                result = self.service.record_disposition(
+                    self._actor(normalized_headers), parts[1], payload["material_type"],
+                    payload["material_ref"], payload["outcome"], int(payload["quantity"]),
+                    payload["reason"],
+                    payload.get("evidence_item_id") if payload.get("evidence_item_id") is None
+                    else int(payload["evidence_item_id"]),
+                )
+                return Response(201, result)
+            if method == "POST" and len(parts) == 3 and parts[0] == "batches" and parts[2] == "closeouts":
+                key = normalized_headers.get("idempotency-key", "").strip()
+                if not key:
+                    raise ValidationFailed("缺少 Idempotency-Key")
+                result = self.service.submit_closeout(
+                    self._actor(normalized_headers), parts[1], key,
+                    payload.get("participant_ids", []), payload.get("note", ""),
+                )
+                return Response(201, result)
+            if method == "GET" and len(parts) == 3 and parts[0] == "batches" and parts[2] == "closeouts":
+                return Response(200, self.service.list_closeouts(self._actor(normalized_headers), parts[1]))
+            if method == "GET" and len(parts) == 3 and parts[0] == "batches" and parts[2] == "closeout_report":
+                return Response(200, self.service.closeout_report(self._actor(normalized_headers), parts[1]))
+            if method == "POST" and len(parts) == 3 and parts[0] == "batches" and parts[2] == "correct_protocol":
+                result = self.service.correct_batch_protocol(
+                    self._actor(normalized_headers), parts[1], int(payload["evidence_protocol_version"])
+                )
+                return Response(200, result)
+            if method == "GET" and len(parts) == 2 and parts[0] == "closeouts":
+                return Response(200, self.service.read_closeout(self._actor(normalized_headers), int(parts[1])))
+            if method == "POST" and len(parts) == 3 and parts[0] == "closeouts" and parts[2] == "instructor_confirm":
+                result = self.service.confirm_closeout_instructor(
+                    self._actor(normalized_headers), int(parts[1]), payload.get("expected_content_sha256")
+                )
+                return Response(200, result)
+            if method == "POST" and len(parts) == 3 and parts[0] == "closeouts" and parts[2] == "museum_confirm":
+                result = self.service.confirm_closeout_museum(
+                    self._actor(normalized_headers), int(parts[1]), payload.get("expected_content_sha256")
+                )
+                return Response(200, result)
+            if method == "POST" and len(parts) == 3 and parts[0] == "closeouts" and parts[2] == "withdraw":
+                result = self.service.withdraw_closeout(
+                    self._actor(normalized_headers), int(parts[1]), payload["reason"]
+                )
+                return Response(200, result)
+            if method == "POST" and len(parts) == 3 and parts[0] == "closeouts" and parts[2] == "return":
+                result = self.service.return_closeout(
+                    self._actor(normalized_headers), int(parts[1]), payload["reason"],
+                    bool(payload.get("partial", False)), payload.get("fields", []),
+                )
+                return Response(200, result)
+            if method == "POST" and len(parts) == 3 and parts[0] == "closeouts" and parts[2] == "supersede":
+                result = self.service.supersede_closeout(
+                    self._actor(normalized_headers), int(parts[1]), payload["reason"]
+                )
+                return Response(200, result)
             return Response(404, {"error": {"code": "route_not_found", "message": "接口不存在"}})
         except ServiceError as exc:
             return Response(exc.status, {"error": {"code": exc.code, "message": str(exc)}})
