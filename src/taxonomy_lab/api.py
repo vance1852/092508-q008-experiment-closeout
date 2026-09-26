@@ -133,6 +133,59 @@ class JsonApplication:
                     payload["decision"], payload["reason"],
                 )
                 return Response(201, result)
+            if method == "POST" and path == "/materials":
+                result = self.service.register_material(
+                    self._actor(normalized_headers), payload["batch_id"], payload["material_code"],
+                    payload["category"], payload["description"], payload["initial_quantity"],
+                    payload["unit"],
+                )
+                return Response(201, result)
+            if method == "POST" and len(parts) == 3 and parts[0] == "materials" and parts[2] == "consumptions":
+                result = self.service.record_consumption(
+                    self._actor(normalized_headers), int(parts[1]),
+                    payload["consumed_quantity"], payload["reason"],
+                )
+                return Response(201, result)
+            if method == "GET" and len(parts) == 3 and parts[0] == "materials" and parts[2] == "trace":
+                return Response(200, self.service.material_trace(self._actor(normalized_headers), int(parts[1])))
+            if method == "POST" and len(parts) == 3 and parts[0] == "batches" and parts[2] == "closures":
+                result = self.service.submit_closure(
+                    self._actor(normalized_headers), parts[1],
+                    payload.get("participants", []), payload.get("materials", []),
+                )
+                return Response(201, result)
+            if method == "GET" and len(parts) == 3 and parts[0] == "batches" and parts[2] == "closures":
+                return Response(200, self.service.list_closures(self._actor(normalized_headers), parts[1]))
+            if method == "GET" and len(parts) == 3 and parts[0] == "batches" and parts[2] == "conservation":
+                return Response(200, self.service.conservation_report(self._actor(normalized_headers), parts[1]))
+            if method == "GET" and len(parts) == 2 and parts[0] == "closures":
+                return Response(200, self.service.get_closure(int(parts[1]), self._actor(normalized_headers)))
+            if method == "POST" and len(parts) == 3 and parts[0] == "closures" and parts[2] == "withdraw":
+                result = self.service.withdraw_closure(
+                    self._actor(normalized_headers), int(parts[1]), payload["reason"]
+                )
+                return Response(200, result)
+            if method == "POST" and len(parts) == 3 and parts[0] == "closures" and parts[2] == "invalidate":
+                result = self.service.invalidate_closure(
+                    self._actor(normalized_headers), int(parts[1]),
+                    payload["category"], payload["reason"],
+                )
+                return Response(200, result)
+            if method == "POST" and len(parts) == 3 and parts[0] == "closures" and parts[2] == "confirm":
+                key = normalized_headers.get("idempotency-key", "").strip()
+                if not key:
+                    raise ValidationFailed("缺少 Idempotency-Key")
+                result = self.service.confirm_closure(
+                    self._actor(normalized_headers), int(parts[1]), payload["party"], key,
+                    payload.get("replay"),
+                )
+                return Response(200, result)
+            if method == "POST" and len(parts) == 3 and parts[0] == "closures" and parts[2] == "partial_return":
+                result = self.service.partial_return(
+                    self._actor(normalized_headers), int(parts[1]),
+                    payload.get("changes", []), payload["reason"],
+                )
+                return Response(200, result)
             return Response(404, {"error": {"code": "route_not_found", "message": "接口不存在"}})
         except ServiceError as exc:
             return Response(exc.status, {"error": {"code": exc.code, "message": str(exc)}})

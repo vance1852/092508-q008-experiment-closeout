@@ -18,6 +18,16 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(result["conclusion"], "pass")
         self.assertEqual(result["decision"], "approved")
         self.assertEqual(len(result["input_sha256"]), 64)
+        self.assertEqual(result["closure"]["state"], "confirmed")
+        self.assertEqual(result["closure"]["version"], 1)
+        self.assertEqual(len(result["closure"]["content_sha256"]), 64)
+        self.assertEqual(result["closure"]["confirmations"], ["instructor", "museum"])
+        self.assertEqual(result["closure"]["material_count"], 4)
+        self.assertTrue(result["conservation_conserved"])
+        self.assertTrue(result["specimen_trace"]["conserved"])
+        self.assertEqual(
+            result["closure"]["accession_catalog_codes"], ["batch-demo-M4-C1"]
+        )
 
 
 if __name__ == "__main__":
